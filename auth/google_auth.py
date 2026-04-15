@@ -522,6 +522,7 @@ async def start_auth_flow(
             oauth_state,
             session_id=session_id,
             code_verifier=flow.code_verifier,
+            expires_in_seconds=1800,  # 30 minutes — users may take time to click the link
         )
 
         logger.info(
