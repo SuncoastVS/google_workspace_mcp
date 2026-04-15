@@ -60,6 +60,7 @@ from gdocs.managers import (
     BatchOperationManager,
 )
 import json
+from gdocs.find_text_in_doc import find_text_in_document
 
 logger = logging.getLogger(__name__)
 HEADER_FOOTER_RUNTIME_CANARY = "docs-hf-canary-20260328b"
@@ -2449,6 +2450,64 @@ async def update_doc_tab(
     link = f"https://docs.google.com/document/d/{document_id}/edit"
     return (
         f"Renamed tab '{tab_id}' to '{title}' in document {document_id}. Link: {link}"
+    )
+
+
+
+@server.tool()
+@handle_http_errors("find_text_in_doc", is_read_only=True, service_type="docs")
+@require_google_service("docs", "docs_read")
+async def find_text_in_doc(
+    service: Any,
+    user_google_email: str,
+    document_id: str,
+    search_text: str,
+    match_case: bool = False,
+    use_regex: bool = False,
+    tab_id: Optional[str] = None,
+    max_results: int = 50,
+) -> str:
+    """Search a Google Doc for text and return exact API indices for each match.
+
+    This tool calls documents().get() to retrieve the full document structure,
+    then searches all text runs for the given string or regex pattern. Returns
+    the exact startIndex and endIndex (Google Docs API coordinates) for every
+    match, enabling precise format_text and link_url operations.
+
+    Unlike get_doc_content (plain text export) or inspect_doc_structure (which
+    returns 0 for docs with embedded images), this tool reads the raw API JSON
+    and returns deterministic indices.
+
+    Args:
+        service: Injected Google Docs API service client
+        user_google_email: User's Google email address
+        document_id: ID of the Google Doc to search
+        search_text: Text string or regex pattern to find
+        match_case: Whether to match case exactly (default: false)
+        use_regex: Whether to interpret search_text as a regex (default: false)
+        tab_id: Optional tab ID to restrict search to a specific tab
+        max_results: Maximum number of matches to return (default: 50)
+
+    Returns:
+        JSON string with all matches and their API index ranges. Each match:
+        - matched_text: the text that was found
+        - api_start_index: start index for format_text operations
+        - api_end_index: end index for format_text operations
+        - paragraph_start_index: start of the containing paragraph
+        - paragraph_end_index: end of the containing paragraph
+        - paragraph_style: named style of the containing paragraph
+    """
+    logger.info(
+        f"[find_text_in_doc] Email: {user_google_email}, "
+        f"Doc: {document_id}, Search: {search_text!r}"
+    )
+    doc_data = await asyncio.to_thread(
+        service.documents()
+        .get(documentId=document_id, includeTabsContent=True)
+        .execute
+    )
+    return find_text_in_document(
+        doc_data, search_text, match_case, use_regex, tab_id, max_results,
     )
 
 
