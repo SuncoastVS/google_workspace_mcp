@@ -9,6 +9,7 @@ from fastmcp.server.middleware import Middleware, MiddlewareContext
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.dependencies import get_http_headers
 
+from auth.allowlist import EmailNotAllowedError, is_email_allowed
 from auth.external_oauth_provider import get_session_time
 from auth.oauth21_session_store import ensure_session_from_access_token
 from auth.oauth_types import WorkspaceAccessToken
@@ -325,6 +326,32 @@ class AuthInfoMiddleware(Middleware):
 
         # Single exit point with logging
         if authenticated_user:
+            # Every branch above converges here, so this is the one place the
+            # allowlist has to hold for the bearer / session paths. Clear the
+            # state the branch already set before raising, so a caller that
+            # swallows the error downstream still cannot act as this user.
+            if not is_email_allowed(authenticated_user):
+                logger.warning(
+                    "Rejected %s authenticated via %s: not on the allowlist",
+                    authenticated_user,
+                    auth_via,
+                )
+                for key in (
+                    "authenticated_user_email",
+                    "authenticated_via",
+                    "auth_provider_type",
+                    "access_token",
+                    "user_email",
+                    "username",
+                ):
+                    try:
+                        await context.fastmcp_context.set_state(key, None)
+                    except Exception:  # noqa: BLE001 - clearing is best effort
+                        pass
+                raise EmailNotAllowedError(
+                    "This account is not authorized to use this server."
+                )
+
             logger.info(f"✓ Authenticated via {auth_via}: {authenticated_user}")
             auth_email = await context.fastmcp_context.get_state(
                 "authenticated_user_email"

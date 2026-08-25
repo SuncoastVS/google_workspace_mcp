@@ -16,6 +16,7 @@ from google.auth.exceptions import RefreshError
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from auth.scopes import SCOPES, get_current_scopes, has_required_scopes  # noqa
+from auth.allowlist import enforce_email_allowed
 from auth.oauth21_session_store import get_oauth21_session_store
 from auth.credential_store import get_credential_store
 from auth.oauth_config import get_oauth_config, is_stateless_mode
@@ -697,6 +698,11 @@ def handle_auth_callback(
 
         user_google_email = user_info["email"]
         logger.info(f"Identified user_google_email: {user_google_email}")
+
+        # Gate before ANY persistence below. The OAuth app being Internal is
+        # what currently stops a non-org account reaching this line at all;
+        # once it is published externally this check is the only thing left.
+        enforce_email_allowed(user_google_email)
 
         credential_store = get_credential_store()
         if not credentials.refresh_token:
