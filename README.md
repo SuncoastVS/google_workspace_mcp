@@ -236,6 +236,7 @@ uv run main.py --transport streamable-http --tools gmail drive calendar
 | `USER_GOOGLE_EMAIL` | | Default email for single-user auth |
 | `GOOGLE_CLIENT_SECRET_PATH` | | Custom path to `client_secret.json` |
 | `GOOGLE_MCP_CREDENTIALS_DIR` | | Credential directory — default `~/.google_workspace_mcp/credentials` |
+| `WORKSPACE_MCP_ALLOWED_EMAILS` | | Comma-separated allowlist of the identities permitted to authenticate. Entries are a full address (`someone@example.com`) or a domain (`@example.com`). Unset means allow everyone. **Set this whenever the Google OAuth app is published externally** — the server otherwise grants a credential to anyone who completes the flow |
 | **🖥️ Server** | | |
 | `WORKSPACE_MCP_BASE_URI` | | Base server URI (no port) — default `http://localhost` |
 | `WORKSPACE_MCP_PORT` | | Listening port — default `8000` |
