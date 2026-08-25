@@ -27,7 +27,10 @@ logger = logging.getLogger(__name__)
 # Helper: extract flat text map from raw Google Docs API response
 # ---------------------------------------------------------------------------
 
-def _build_text_index_map(doc_data: dict[str, Any], tab_id: Optional[str] = None) -> list[dict[str, Any]]:
+
+def _build_text_index_map(
+    doc_data: dict[str, Any], tab_id: Optional[str] = None
+) -> list[dict[str, Any]]:
     """
     Walk every paragraph → element → textRun in the document body and build
     a flat list of text segments with their API indices.
@@ -67,36 +70,39 @@ def _build_text_index_map(doc_data: dict[str, Any], tab_id: Optional[str] = None
         para = element["paragraph"]
         para_start = element.get("startIndex", 0)
         para_end = element.get("endIndex", 0)
-        para_style = (
-            para.get("paragraphStyle", {})
-            .get("namedStyleType", "NORMAL_TEXT")
-        )
+        para_style = para.get("paragraphStyle", {}).get("namedStyleType", "NORMAL_TEXT")
 
         for pe in para.get("elements", []):
             if "textRun" in pe:
                 tr = pe["textRun"]
-                segments.append({
-                    "text": tr.get("content", ""),
-                    "start_index": pe.get("startIndex", 0),
-                    "end_index": pe.get("endIndex", 0),
-                    "paragraph_start": para_start,
-                    "paragraph_end": para_end,
-                    "paragraph_style": para_style,
-                })
+                segments.append(
+                    {
+                        "text": tr.get("content", ""),
+                        "start_index": pe.get("startIndex", 0),
+                        "end_index": pe.get("endIndex", 0),
+                        "paragraph_start": para_start,
+                        "paragraph_end": para_end,
+                        "paragraph_style": para_style,
+                    }
+                )
             elif "inlineObjectElement" in pe:
-                segments.append({
-                    "text": "[image]",
-                    "start_index": pe.get("startIndex", 0),
-                    "end_index": pe.get("endIndex", 0),
-                    "paragraph_start": para_start,
-                    "paragraph_end": para_end,
-                    "paragraph_style": para_style,
-                })
+                segments.append(
+                    {
+                        "text": "[image]",
+                        "start_index": pe.get("startIndex", 0),
+                        "end_index": pe.get("endIndex", 0),
+                        "paragraph_start": para_start,
+                        "paragraph_end": para_end,
+                        "paragraph_style": para_style,
+                    }
+                )
 
     return segments
 
 
-def _concatenate_segments(segments: list[dict[str, Any]]) -> tuple[str, list[tuple[int, int]]]:
+def _concatenate_segments(
+    segments: list[dict[str, Any]],
+) -> tuple[str, list[tuple[int, int]]]:
     """
     Concatenate all segment texts into a single string and build a mapping
     from string offset → API index.
@@ -163,14 +169,16 @@ def _find_matches(
                     para_style = seg["paragraph_style"]
                     break
 
-            results.append({
-                "matched_text": m.group(),
-                "api_start_index": api_start,
-                "api_end_index": api_end,
-                "paragraph_start_index": para_start,
-                "paragraph_end_index": para_end,
-                "paragraph_style": para_style,
-            })
+            results.append(
+                {
+                    "matched_text": m.group(),
+                    "api_start_index": api_start,
+                    "api_end_index": api_end,
+                    "paragraph_start_index": para_start,
+                    "paragraph_end_index": para_end,
+                    "paragraph_style": para_style,
+                }
+            )
 
     return results
 
@@ -191,6 +199,7 @@ def _str_offset_to_api_index(
 # ---------------------------------------------------------------------------
 # Public function: called by the MCP tool handler
 # ---------------------------------------------------------------------------
+
 
 def find_text_in_document(
     doc_data: dict[str, Any],
@@ -217,16 +226,23 @@ def find_text_in_document(
     segments = _build_text_index_map(doc_data, tab_id)
 
     if not segments:
-        return json.dumps({
-            "error": "No text content found in document",
-            "matches": [],
-            "total_matches": 0,
-        })
+        return json.dumps(
+            {
+                "error": "No text content found in document",
+                "matches": [],
+                "total_matches": 0,
+            }
+        )
 
     full_text, mappings = _concatenate_segments(segments)
     matches = _find_matches(
-        full_text, mappings, segments,
-        search_text, match_case, use_regex, max_results,
+        full_text,
+        mappings,
+        segments,
+        search_text,
+        match_case,
+        use_regex,
+        max_results,
     )
 
     # Also return document total_length for reference
@@ -236,16 +252,19 @@ def find_text_in_document(
         last = body_content[-1]
         total_length = last.get("endIndex", 0)
 
-    return json.dumps({
-        "document_id": doc_data.get("documentId", ""),
-        "document_title": doc_data.get("title", ""),
-        "total_length": total_length,
-        "search_text": search_text,
-        "match_case": match_case,
-        "use_regex": use_regex,
-        "total_matches": len(matches),
-        "matches": matches,
-    }, indent=2)
+    return json.dumps(
+        {
+            "document_id": doc_data.get("documentId", ""),
+            "document_title": doc_data.get("title", ""),
+            "total_length": total_length,
+            "search_text": search_text,
+            "match_case": match_case,
+            "use_regex": use_regex,
+            "total_matches": len(matches),
+            "matches": matches,
+        },
+        indent=2,
+    )
 
 
 # ---------------------------------------------------------------------------
