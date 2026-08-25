@@ -24,7 +24,7 @@ jobs:
     - name: Install uv
       uses: astral-sh/setup-uv@v7
     - name: Install dependencies
-      run: uv sync
+      run: uv sync --frozen
     - name: Auto-fix ruff lint and format
       if: github.event_name == 'pull_request'
       run: |
@@ -36,7 +36,11 @@ jobs:
         git diff --quiet && exit 0
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
-        git add -A
+        # Only the Python files ruff formatted. `git add -A` swept in whatever
+        # else the job had dirtied -- notably uv.lock -- so every PR carried a
+        # couple of thousand lines of lockfile churn it never asked for.
+        git add -u -- '*.py'
+        git diff --cached --quiet && exit 0
         git commit -m "style: auto-fix ruff lint and format"
         git push
     - name: Validate

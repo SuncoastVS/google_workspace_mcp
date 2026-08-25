@@ -2453,7 +2453,6 @@ async def update_doc_tab(
     )
 
 
-
 @server.tool()
 @handle_http_errors("find_text_in_doc", is_read_only=True, service_type="docs")
 @require_google_service("docs", "docs_read")
@@ -2502,12 +2501,15 @@ async def find_text_in_doc(
         f"Doc: {document_id}, Search: {search_text!r}"
     )
     doc_data = await asyncio.to_thread(
-        service.documents()
-        .get(documentId=document_id, includeTabsContent=True)
-        .execute
+        service.documents().get(documentId=document_id, includeTabsContent=True).execute
     )
     return find_text_in_document(
-        doc_data, search_text, match_case, use_regex, tab_id, max_results,
+        doc_data,
+        search_text,
+        match_case,
+        use_regex,
+        tab_id,
+        max_results,
     )
 
 
