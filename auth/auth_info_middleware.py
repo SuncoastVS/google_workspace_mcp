@@ -11,7 +11,10 @@ from fastmcp.server.dependencies import get_http_headers
 
 from auth.allowlist import EmailNotAllowedError, is_email_allowed
 from auth.external_oauth_provider import get_session_time
-from auth.oauth21_session_store import ensure_session_from_access_token
+from auth.oauth21_session_store import (
+    ensure_session_from_access_token,
+    get_auth_provider as get_protocol_auth_provider,
+)
 from auth.oauth_types import WorkspaceAccessToken
 
 # Configure logging
@@ -37,6 +40,19 @@ class AuthInfoMiddleware(Middleware):
         authenticated_user = None
         auth_via = None
 
+        # Identity is per request. The keys below are written request-scoped, but
+        # an earlier request that used the same mcp-session-id (a header the
+        # client chooses, and which stateless HTTP never validates) may have left
+        # session-scoped values behind. Shadow them with None before any path
+        # runs, so a request that resolves no principal cannot read someone
+        # else's.
+        for key in ("authenticated_user_email", "authenticated_via"):
+            await context.fastmcp_context.set_state(key, None, serializable=False)
+
+        # With protocol-level auth every request already carries a token FastMCP
+        # verified, so the caller is whoever that token names and nothing else.
+        protocol_auth = get_protocol_auth_provider() is not None
+
         # First check if FastMCP has already validated an access token
         try:
             access_token = get_access_token()
@@ -51,10 +67,10 @@ class AuthInfoMiddleware(Middleware):
                         f"✓ Using FastMCP validated token for user: {user_email}"
                     )
                     await context.fastmcp_context.set_state(
-                        "authenticated_user_email", user_email
+                        "authenticated_user_email", user_email, serializable=False
                     )
                     await context.fastmcp_context.set_state(
-                        "authenticated_via", "fastmcp_oauth"
+                        "authenticated_via", "fastmcp_oauth", serializable=False
                     )
                     await context.fastmcp_context.set_state(
                         "access_token", access_token, serializable=False
@@ -176,10 +192,14 @@ class AuthInfoMiddleware(Middleware):
                                         )
                                         # Set the definitive authentication state
                                         await context.fastmcp_context.set_state(
-                                            "authenticated_user_email", user_email
+                                            "authenticated_user_email",
+                                            user_email,
+                                            serializable=False,
                                         )
                                         await context.fastmcp_context.set_state(
-                                            "authenticated_via", "bearer_token"
+                                            "authenticated_via",
+                                            "bearer_token",
+                                            serializable=False,
                                         )
                                         authenticated_user = user_email
                                         auth_via = "bearer_token"
@@ -212,8 +232,11 @@ class AuthInfoMiddleware(Middleware):
                 logger.debug(f"Could not get HTTP request: {e}")
 
         # After trying HTTP headers, check for other authentication methods
-        # This consolidates all authentication logic in the middleware
-        if not authenticated_user:
+        # This consolidates all authentication logic in the middleware. These
+        # fallbacks (stdio session, single stored session, MCP session binding)
+        # identify a caller by something other than a verified token, so they
+        # never run once protocol-level auth is in force.
+        if not authenticated_user and not protocol_auth:
             logger.debug(
                 "No authentication found via bearer token, checking other methods"
             )
@@ -249,10 +272,12 @@ class AuthInfoMiddleware(Middleware):
                             )
                             # In stdio mode, we can trust the user has authenticated recently
                             await context.fastmcp_context.set_state(
-                                "authenticated_user_email", requested_user
+                                "authenticated_user_email",
+                                requested_user,
+                                serializable=False,
                             )
                             await context.fastmcp_context.set_state(
-                                "authenticated_via", "stdio_session"
+                                "authenticated_via", "stdio_session", serializable=False
                             )
                             await context.fastmcp_context.set_state(
                                 "auth_provider_type", "oauth21_stdio"
@@ -274,10 +299,14 @@ class AuthInfoMiddleware(Middleware):
                                 f"Defaulting to single stdio OAuth session for {single_user}"
                             )
                             await context.fastmcp_context.set_state(
-                                "authenticated_user_email", single_user
+                                "authenticated_user_email",
+                                single_user,
+                                serializable=False,
                             )
                             await context.fastmcp_context.set_state(
-                                "authenticated_via", "stdio_single_session"
+                                "authenticated_via",
+                                "stdio_single_session",
+                                serializable=False,
                             )
                             await context.fastmcp_context.set_state(
                                 "auth_provider_type", "oauth21_stdio"
@@ -311,10 +340,14 @@ class AuthInfoMiddleware(Middleware):
                         if bound_user:
                             logger.debug(f"MCP session bound to {bound_user}")
                             await context.fastmcp_context.set_state(
-                                "authenticated_user_email", bound_user
+                                "authenticated_user_email",
+                                bound_user,
+                                serializable=False,
                             )
                             await context.fastmcp_context.set_state(
-                                "authenticated_via", "mcp_session_binding"
+                                "authenticated_via",
+                                "mcp_session_binding",
+                                serializable=False,
                             )
                             await context.fastmcp_context.set_state(
                                 "auth_provider_type", "oauth21_session"
@@ -323,6 +356,14 @@ class AuthInfoMiddleware(Middleware):
                             auth_via = "mcp_session_binding"
                     except Exception as e:
                         logger.debug(f"Error checking MCP session binding: {e}")
+
+        if protocol_auth and not authenticated_user:
+            # A token FastMCP accepted but that names no account. Acting for it
+            # would mean guessing an identity, so refuse.
+            logger.warning("Rejected a verified token that carries no account email")
+            raise EmailNotAllowedError(
+                "Unable to determine which account this token belongs to."
+            )
 
         # Single exit point with logging
         if authenticated_user:
@@ -345,7 +386,9 @@ class AuthInfoMiddleware(Middleware):
                     "username",
                 ):
                     try:
-                        await context.fastmcp_context.set_state(key, None)
+                        await context.fastmcp_context.set_state(
+                            key, None, serializable=False
+                        )
                     except Exception:  # noqa: BLE001 - clearing is best effort
                         pass
                 raise EmailNotAllowedError(
